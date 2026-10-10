@@ -4,3 +4,4 @@ __pycache__/
 *.parquet
 mlruns/
 .pytest_cache/
+*.egg-info/
