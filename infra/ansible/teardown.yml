@@ -1,0 +1,10 @@
+- name: Tear down FareOps
+  hosts: local
+  gather_facts: false
+  tasks:
+      - name: Delete the k3d cluster
+        ansible.builtin.command: k3d cluster delete {{ cluster_name }}
+        changed_when: true
+      - name: Stop Colima
+        ansible.builtin.command: colima stop
+        changed_when: true
