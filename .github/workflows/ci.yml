@@ -1,0 +1,112 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          pip install -e services/common
+          pip install -r services/trainer/requirements.txt \
+                      -r services/fare-api/requirements.txt \
+                      -r services/loop-controller/requirements.txt \
+                      pytest==9.1.1 ruff==0.17.0 httpx==0.28.1
+      - run: ruff check services scripts
+      - run: pytest -q
+
+  build:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [fare-api, trainer, loop-controller, mlflow]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: vars
+        run: |
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/fareops" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build amd64 image for scanning
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: services
+          file: services/${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: scan/${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Trivy gate (fixable CRITICAL vulnerabilities fail the build)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scan/${{ matrix.service }}:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Build and push multi-arch
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: services
+          file: services/${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.vars.outputs.prefix }}-${{ matrix.service }}:${{ steps.vars.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && vars.ENABLE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    concurrency: gitops
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/fareops-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+      - name: Bump image tags in the GitOps repo
+        run: |
+          TAG=${GITHUB_SHA::7}
+          P=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/fareops
+          python3 scripts/set_marker.py gitops/apps/fare-api/rollout.yaml \
+            fare-api-image "$P-fare-api:$TAG"
+          python3 scripts/set_marker.py gitops/apps/loop-controller.yaml \
+            loop-controller-image "$P-loop-controller:$TAG"
+          python3 scripts/set_marker.py gitops/apps/loop-controller.yaml \
+            trainer-image "$P-trainer:$TAG"
+          python3 scripts/set_marker.py gitops/apps/mlflow.yaml mlflow-image "$P-mlflow:$TAG"
+      - name: Commit and push
+        working-directory: gitops
+        run: |
+          git config user.name "fareops-ci"
+          git config user.email "fareops-ci@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "nothing to deploy"; exit 0; }
+          git commit -m "deploy: ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}"
+          for i in 1 2 3; do git pull --rebase && git push && exit 0; sleep 5; done
+          exit 1

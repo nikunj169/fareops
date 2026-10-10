@@ -61,3 +61,20 @@ Format: date · phase · what changed · why · evidence (command output or erro
   `linter.rules.enabled` with no user or repo config present
   (`ls ~/.config/ruff/` → nothing); findings reproduced in the gate-3 run logged in
   docs/PROGRESS.md.
+
+## 2026-10-10 · Phase 6 · loop-controller requirements gain numpy==2.4.6
+
+- **What**: Added `numpy==2.4.6` to `services/loop-controller/requirements.txt`
+  (guide 5.1 lists the file without numpy).
+- **Why**: The Docker runtime stage installs every wheel in /wheels with
+  `pip install --no-index --find-links=/wheels`, and `fareops-common` declares
+  `dependencies = ["numpy", "requests"]` (guide 3.1). No other loop-controller pin
+  pulls numpy, so no numpy wheel was built and the offline install failed:
+  `ERROR: Could not find a version that satisfies the requirement numpy
+  (from fareops-common) (from versions: none)`. Caught by a local `docker build`
+  smoke test of all four images before CI ran; the CI build (same Dockerfile, same
+  offline install) would fail identically.
+- **Evidence**: `/tmp/build-loop-controller.log` (docker buildx failure at the
+  runtime `pip install` step); fare-api and trainer built OK because their own
+  requirements already pin numpy. The CI **test** job is unaffected (it installs
+  all three requirements files together, so numpy was present there).
