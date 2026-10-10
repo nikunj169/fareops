@@ -1,0 +1,9 @@
+line-length = 120
+target-version = "py311"
+
+[lint]
+# Explicit selection: ruff >= 0.17 enables a much broader default rule set (YTT, ASYNC,
+# SIM, I, ...) than the E4/E7/E9/F classic defaults this guide's code was written
+# against. Pinned here so `ruff check services scripts` means the same thing in every
+# phase. See docs/deviations.md (2026-10-10, Phase 3).
+select = ["E4", "E7", "E9", "F"]
