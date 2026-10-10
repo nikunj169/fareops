@@ -32,3 +32,32 @@ Format: date · phase · what changed · why · evidence (command output or erro
   args, conditions, order) is unchanged from the guide.
 - **Evidence**: `make up` ran the playbook twice: first run `failed=0`, second run
   `changed=0` (idempotent) — both pasted in docs/PROGRESS.md.
+
+## 2026-10-10 · Phase 3 · pyarrow stepped down 26.0.0 → 25.0.1 (guide rule: "If a pinned set fails pip install together...")
+
+- **What**: `pyarrow==26.0.0` (newest on PyPI) replaced by `pyarrow==25.0.1` (newest < 26)
+  in `versions.md`, `scripts/requirements-host.txt` and `services/trainer/requirements.txt`.
+- **Why**: `pip install -r services/trainer/requirements.txt` failed with
+  `ResolutionImpossible: Cannot install mlflow==3.17.0 ... and pyarrow==26.0.0`.
+  mlflow 3.17.0 declares `pyarrow<26,>=4.0.0`; 25.0.1 is the newest satisfying it.
+  The guide's rule names numpy, but the mechanism it defines (step the conflicting pin
+  down to the newest mutually-acceptable version, record why here) applies to any pin.
+- **Evidence**: `curl -s https://pypi.org/pypi/mlflow/3.17.0/json` →
+  `['numpy<3', 'pandas<4', 'pyarrow<26,>=4.0.0', ...]`; pandas 3.0.6 requires
+  `pyarrow>=13.0.0` (extras only) and lightgbm 4.7.0 `numpy>=1.21.3`, so 25.0.1 and
+  numpy 2.4.6 remain acceptable to every other pin.
+
+## 2026-10-10 · Phase 3 · `ruff.toml` introduced early with an explicit `select`
+
+- **What**: The guide defines `ruff.toml` (line-length 120, target-version py311) in
+  Phase 6.1. We wrote it in Phase 3, adding `[lint] select = ["E4", "E7", "E9", "F"]`.
+- **Why**: Gate 3 requires `ruff check services scripts` to be clean. With the pinned
+  ruff 0.17.0 and NO repo config, ruff's built-in defaults enable a much broader rule
+  set than the classic E4/E7/E9/F defaults — it flagged 6 findings in guide-written code
+  (EXE001, I001 x4, SIM114) and would keep flagging guide code in later phases
+  (`except Exception` patterns etc.). Pinning the selection makes the gate's meaning
+  stable and matches the guide's evident assumption. No guide file content was altered.
+- **Evidence**: `ruff check --show-settings` lists YTT*/ASYNC*/SIM*/I* rules as
+  `linter.rules.enabled` with no user or repo config present
+  (`ls ~/.config/ruff/` → nothing); findings reproduced in the gate-3 run logged in
+  docs/PROGRESS.md.

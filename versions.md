@@ -15,7 +15,7 @@ Resolved on: 2026-10-10.
 | grafana | v13.2.3 |
 | mlflow / mlflow-skinny | 3.17.0 |
 | lightgbm | 4.7.0 |
-| pandas / pyarrow / numpy | 3.0.6 / 26.0.0 / 2.4.6 |
+| pandas / pyarrow / numpy | 3.0.6 / 25.0.1 / 2.4.6 |
 | fastapi / uvicorn / prometheus-client | 0.143.0 / 0.54.0 / 0.26.0 |
 | kubernetes (python) / requests / httpx | 37.0.1 / 2.34.2 / 0.28.1 |
 | pytest / ruff | 9.1.1 / 0.17.0 |
