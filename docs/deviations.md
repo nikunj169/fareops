@@ -22,3 +22,13 @@ Format: date · phase · what changed · why · evidence (command output or erro
 - **Why**: The PDF is the only guide present; its text was extracted with
   `pdftotext -layout` and read in full. No content skipped; no file renamed.
 - **Evidence**: `ls -la docs/` shows only `implementation guide.pdf` and `progress.md`.
+
+## 2026-10-10 · Phase 1 · YAML indentation reconstructed from the PDF text layer
+
+- **What**: The guide's Phase 1 Ansible YAML is line-wrapped by the PDF layout (task
+  keys, `when:` clauses and list items broken across lines with drifting indentation).
+  Files were written with valid YAML indentation matching the guide's evident structure.
+- **Why**: PDF-extracted indentation is not valid YAML; structure (task names, module
+  args, conditions, order) is unchanged from the guide.
+- **Evidence**: `make up` ran the playbook twice: first run `failed=0`, second run
+  `changed=0` (idempotent) — both pasted in docs/PROGRESS.md.

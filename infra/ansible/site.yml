@@ -1,0 +1,103 @@
+- name: FareOps local platform
+  hosts: local
+  gather_facts: false
+  tasks:
+      - name: Require environment variables from Phase 0
+        ansible.builtin.assert:
+            that:
+                - gh_user | length > 0
+                - gitops_token | length > 0
+                - grafana_admin_password | length > 0
+            fail_msg: "Export GH_USER, GITOPS_TOKEN and GRAFANA_ADMIN_PASSWORD first."
+
+      - name: Tap Homebrew repositories
+        community.general.homebrew_tap:
+            name: "{{ brew_taps }}"
+            state: present
+
+      - name: Install host tools
+        community.general.homebrew:
+            name: "{{ brew_packages }}"
+            state: present
+
+      - name: Register docker-buildx as a Docker CLI plugin
+        ansible.builtin.shell: |
+            mkdir -p "$HOME/.docker/cli-plugins"
+            ln -sfn "$(brew --prefix)/opt/docker-buildx/bin/docker-buildx" "$HOME/.docker/cli-plugins/docker-buildx"
+        changed_when: false
+
+      - name: Create host data directories
+        ansible.builtin.file:
+            path: "{{ data_dir }}/{{ item }}"
+            state: directory
+            mode: "0777"
+        loop: [datasets, inference-logs]
+
+      - name: Check whether Colima is running
+        ansible.builtin.command: colima status
+        register: colima_status
+        failed_when: false
+        changed_when: false
+
+      - name: Start Colima (vz + virtiofs, data dir mounted writable)
+        ansible.builtin.command: >-
+            colima start --cpu {{ colima_cpu }} --memory {{ colima_memory_gb }}
+            --disk {{ colima_disk_gb }} --vm-type vz --mount-type virtiofs
+            --mount {{ data_dir }}:w
+        when: colima_status.rc != 0
+
+      - name: List k3d clusters
+        ansible.builtin.command: k3d cluster list -o json
+        register: k3d_list
+        changed_when: false
+
+      - name: Create k3d cluster
+        ansible.builtin.command: >-
+            k3d cluster create {{ cluster_name }} --servers 1 --agents 0
+            --port 8080:80@loadbalancer
+            --volume {{ data_dir }}:/mnt/fareops-data@server:0
+            --wait --timeout 180s
+        when: cluster_name not in (k3d_list.stdout | from_json | map(attribute='name') | list)
+
+      - name: Use the k3d context
+        ansible.builtin.command: kubectl config use-context k3d-{{ cluster_name }}
+        changed_when: false
+
+      - name: Wait for the node to be Ready
+        ansible.builtin.command: kubectl wait --for=condition=Ready nodes --all --timeout=180s
+        changed_when: false
+
+      - name: Flux pre-flight check
+        ansible.builtin.command: flux check --pre
+        changed_when: false
+
+      - name: Install Flux (source + kustomize controllers only)
+        ansible.builtin.command: flux install --components=source-controller,kustomize-controller
+        register: flux_install
+        changed_when: "'installed' in flux_install.stdout or 'created' in flux_install.stdout"
+
+      - name: Create namespaces and Secrets (never stored in Git)
+        ansible.builtin.shell: |
+            set -euo pipefail
+            for ns in fareops monitoring; do
+                kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
+            done
+            kubectl -n fareops create secret generic gitops-token \
+                --from-literal=token="$GITOPS_TOKEN" --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n monitoring create secret generic grafana-admin \
+                --from-literal=admin-user=admin \
+                --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD" \
+                --dry-run=client -o yaml | kubectl apply -f -
+        args:
+            executable: /bin/bash
+        no_log: true
+        changed_when: false
+
+      - name: Check for the Flux sync manifest in the GitOps repo
+        ansible.builtin.stat:
+            path: "{{ gitops_dir }}/clusters/local/flux-sync.yaml"
+        register: flux_sync
+
+      - name: Point Flux at the GitOps repo (from Phase 7 onwards)
+        ansible.builtin.command: kubectl apply -f {{ gitops_dir }}/clusters/local/flux-sync.yaml
+        when: flux_sync.stat.exists

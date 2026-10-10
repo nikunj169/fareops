@@ -1,0 +1,19 @@
+cluster_name: fareops
+colima_cpu: 4
+colima_memory_gb: 5
+colima_disk_gb: 40
+home_dir: "{{ lookup('env', 'HOME') }}"
+data_dir: "{{ home_dir }}/fareops-data"
+gitops_dir: "{{ home_dir }}/fareops-gitops"
+gh_user: "{{ lookup('env', 'GH_USER') }}"
+gitops_token: "{{ lookup('env', 'GITOPS_TOKEN') }}"
+grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') }}"
+brew_taps: [fluxcd/tap, argoproj/tap]
+brew_packages:
+    - colima
+    - docker
+    - docker-buildx
+    - kubernetes-cli
+    - k3d
+    - fluxcd/tap/flux
+    - argoproj/tap/kubectl-argo-rollouts
