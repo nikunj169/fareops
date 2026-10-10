@@ -1,0 +1,6 @@
+mlflow==3.17.0
+lightgbm==4.7.0
+pandas==3.0.6
+pyarrow==26.0.0
+numpy==2.4.6
+requests==2.34.2
