@@ -9,5 +9,6 @@ down:
 
 venv:
 	python3.11 -m venv .venv && .venv/bin/pip install -r scripts/requirements-host.txt
+
 data: venv
 	.venv/bin/python scripts/prepare_data.py --out $(HOME)/fareops-data
