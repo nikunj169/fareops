@@ -1,0 +1,6 @@
+.venv/
+.venv-dev/
+__pycache__/
+*.parquet
+mlruns/
+.pytest_cache/
