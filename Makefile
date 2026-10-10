@@ -25,4 +25,4 @@ replay-airport:
 	.venv/bin/python scripts/replay.py --file $(HOME)/fareops-data/datasets/replay_airport.parquet --rps 15
 train-%:
 	@kubectl -n fareops port-forward svc/loop-controller 18000:8000 >/dev/null 2>&1 & PF=$$!; sleep 3; \
-	  curl -fsS -X POST "localhost:18000/train?mode=$$*"; echo; kill $$PF
+	  curl -fsS -X POST "localhost:18000/train?mode=$*"; echo; kill $$PF
