@@ -78,3 +78,27 @@ Format: date · phase · what changed · why · evidence (command output or erro
   runtime `pip install` step); fare-api and trainer built OK because their own
   requirements already pin numpy. The CI **test** job is unaffected (it installs
   all three requirements files together, so numpy was present there).
+
+## 2026-10-10 · Phase 8 · MLflow server disables its background job system
+
+- **What**: Added two env vars to `apps/mlflow.yaml` (guide 8.3 has no `env:` block
+  for the mlflow container):
+  `MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false` and
+  `MLFLOW_SERVER_JOB_ENABLE_PERIODIC_TASKS=false`. The guide's memory budget
+  (requests 192Mi / limits 512Mi) is kept unchanged.
+- **Why**: MLflow 3.17.0 starts a Huey consumer pool (one `python -m
+  huey.bin.huey_consumer` per worker, worker count ≈ host CPU count) for its
+  background job system (trace archival / online scoring — features FareOps never
+  uses). On this machine that pool pushes the container past any reasonable cap:
+  the pod was `OOMKilled exit=137` in a crash loop at the guide's 512Mi limit, and
+  local `docker run` tests were OOMKilled at **both 512m and 768m**, with unique
+  memory climbing 812MiB → 1.64GiB while completely idle (15 quiet log lines — no
+  error loop). With the two env vars the same image idles at **356–358MiB stable**
+  and serves `/health` 200 plus real `experiments/search` API calls, so the guide's
+  512Mi limit is respected rather than raised.
+- **Evidence**: local `docker run` repro with `smoke-fareops:mlflow` (same
+  mlflow==3.17.0 pin as the GHCR image): `-m 512m` and `-m 768m` → `OOMKilled=true`;
+  no `-m` + `docker stats` → 1.621GiB; with the env vars → 356.2MiB/358.2MiB at
+  t=25s/55s, `curl /health` → 200, POST `/api/2.0/mlflow/experiments/search` →
+  `{"experiments":[{"experiment_id":"0","name":"Default",...}]}` with both
+  `mlflow.fareops.svc.cluster.local:5000` and `localhost:5000` Host headers.
