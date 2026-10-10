@@ -6,9 +6,9 @@ Resolved on: 2026-10-10.
 
 | Component | Version |
 |---|---|
-| colima | pending — filled after Phase 1 (`colima version`) |
-| k3d / default k3s image | pending — filled after Phase 1 (`k3d version`) |
-| flux | pending — filled after Phase 1 (`flux version --client`) |
+| colima | 0.10.3 |
+| k3d / default k3s image | k3d v5.9.0 / k3s v1.35.5-k3s1 (default) |
+| flux | v2.9.6 |
 | argo-rollouts | v1.10.0 |
 | prometheus | v3.15.0 |
 | alertmanager | v0.34.1 |
