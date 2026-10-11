@@ -123,3 +123,31 @@ Format: date · phase · what changed · why · evidence (command output or erro
   `http://172.16.139.214:8080/predict` → `{"fare_prediction":14.39,"model_version":"1"}`.
   The guide's own troubleshooting row "`localhost:8080` refused → Port in use →
   `lsof -i :8080`" covers the same cause.
+
+## 2026-10-11 · Phase 10 · Trainer `retrain` mode crashed: champion and candidate shared `<tmp>/serving`
+
+- **What**: In `services/trainer/trainer/train.py` (guide 3.5) the champion's artifacts
+  are now downloaded into their own directory:
+  `champion_dir = os.path.join(tmp, "champion"); os.makedirs(champion_dir);
+  load_serving(client, champ.version, champion_dir)` instead of the guide's
+  `load_serving(client, champ.version, tmp)`. Added the regression test
+  `test_initial_then_retrain_end_to_end` (runs `main()` for `initial` then `retrain`
+  against a local sqlite MLflow store, GitOps stubbed).
+- **Why**: The guide's code is self-colliding in `retrain` mode.
+  `mlflow.artifacts.download_artifacts(run_id=..., artifact_path="serving", dst_path=tmp)`
+  creates `<tmp>/serving`; a few lines later the candidate is written with
+  `serving = os.path.join(tmp, "serving"); os.makedirs(serving)`, which raises because
+  the directory already exists. `initial` and `bad` never download a champion, so
+  gates 3–9 could not catch it; the first drift-triggered retrain (Scenario 1) did.
+  The gate decision itself was correct before the crash; nothing was registered or
+  committed, so the loop simply did not close. No behaviour other than the download
+  location changes.
+- **Evidence**: Scenario 1 attempt, 2026-10-11 17:21 IST, Job
+  `trainer-retrain-1791719507` (image `fareops-trainer:0b0e520`, `backoffLimit=0`,
+  `failed=1`): log line
+  `{"event": "evaluated", "mode": "retrain", "candidate_mae": 3.5403686963810346,
+  "champion_mae": 6.054032468233714, "passed": true}` followed by
+  `File "/app/trainer/train.py", line 95, in main  os.makedirs(serving)
+  FileExistsError: [Errno 17] File exists: '/tmp/tmp024tucm8/serving'`.
+  The new test fails with the same `FileExistsError` on the unfixed file and passes
+  with the fix (`pytest -q` → 23 passed; `ruff check services scripts` → clean).
