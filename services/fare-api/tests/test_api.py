@@ -74,3 +74,12 @@ def test_invalid_trip_422(app_main):
     client = TestClient(app_main.app)
     r = client.post("/predict", json={**TRIP, "trip_distance": -1})
     assert r.status_code == 422
+
+
+def test_info_reports_service(app_main):
+    """Guide 9.7: /info names the service (the visible Path A change)."""
+    from fastapi.testclient import TestClient
+    client = TestClient(app_main.app)
+    body = client.get("/info").json()
+    assert body["service"] == "fare-api"
+    assert body["ready"] is False
