@@ -82,7 +82,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         if mode == "retrain":
             champ = client.get_model_version_by_alias(S.MODEL_NAME, S.CHAMPION_ALIAS)
-            champion_mae = mae(load_serving(client, champ.version, tmp), X_hold, y_hold)
+            # Own directory: download_artifacts() creates <dst>/serving, which must not collide
+            # with the candidate's <tmp>/serving created below.
+            champion_dir = os.path.join(tmp, "champion")
+            os.makedirs(champion_dir)
+            champion_mae = mae(load_serving(client, champ.version, champion_dir), X_hold, y_hold)
         passed = mode != "retrain" or candidate_mae <= champion_mae * (1 - S.MIN_IMPROVEMENT)
         log(event="evaluated", mode=mode, candidate_mae=candidate_mae, champion_mae=champion_mae, passed=passed)
 
