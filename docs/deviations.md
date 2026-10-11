@@ -151,3 +151,45 @@ Format: date · phase · what changed · why · evidence (command output or erro
   FileExistsError: [Errno 17] File exists: '/tmp/tmp024tucm8/serving'`.
   The new test fails with the same `FileExistsError` on the unfixed file and passes
   with the fix (`pytest -q` → 23 passed; `ruff check services scripts` → clean).
+
+## 2026-10-11 · Phase 9–10 · Operator steps added around deploys and resets (no guide file changed)
+
+- **What**: Two manual precautions that the guide does not list, both recorded in
+  `docs/demo-runbook.md`:
+  1. *Pre-pull before a deploy.* As each CI build finishes, the new image is pulled
+     onto the node with `docker exec k3d-fareops-server-0 crictl pull <image>:<sha7>`
+     before the `deploy:` commit lands.
+  2. *Stop replay before the 10.3 reset.* The guide's reset commands are run with no
+     traffic flowing; replay is restarted once the Rollout is Healthy on v1.
+- **Why**:
+  1. A `deploy:` commit changes four image tags at once. On the 5 GiB / 4 CPU VM the
+     first such deploy saturated the node while pulling; probes with 1 s timeouts
+     failed, fare-api pods were liveness-killed, and they could not reload the model
+     because MLflow (strategy Recreate) was itself restarting.
+  2. Resetting from v2 to v1 is a canary rollout like any other. Under airport traffic
+     the v1 canary's MAE is about 1.7 times the v2 stable pods', which fails
+     `mae-ratio-canary-vs-stable` (< 1.25), and the watcher would then revert the reset.
+- **Evidence**:
+  1. Deploy `cd4b260` (no pre-pull), 16:57–17:06 IST: `docker stats` →
+     `k3d-fareops-server-0 357.43% 2.57GiB`; fare-api restart counts 5/7/6; replay
+     `sent=62550 ok=57411` (5,139 failed). Deploy `3914684` (pre-pulled), 17:39–17:45:
+     0 pod restarts; replay `sent=18750 ok=18733` (17 failed); Healthy 5 min 53 s after
+     the commit.
+  2. Scenario 1 measurements: v1 live MAE 5.9–6.2 USD vs v2 3.2–3.8 USD on airport
+     traffic. The reset run with replay stopped reached Healthy on v1 in about
+     6 min 30 s.
+
+## 2026-10-11 · Phase 9 · First Path A deploy job failed: GitOps token had no write access
+
+- **What**: The fine-grained token created in Phase 0.4 was replaced by a new one
+  (user action). No file changed; the Actions secret `GITOPS_TOKEN`, the `~/.zshrc`
+  export and the cluster Secret `gitops-token` (via `make up`) were refreshed, and the
+  failed `deploy` job was re-run with `gh run rerun 38133109385 --failed`.
+- **Why**: The original token authenticated but could not push to `fareops-gitops`.
+  Nothing had needed to write before Phase 9.7 (the 9.3 trainer run logged
+  `"committed": false`), so earlier gates could not reveal it.
+- **Evidence**: deploy job log: `remote: Permission to nikunj169/fareops-gitops.git
+  denied to nikunj169. fatal: ... The requested URL returned error: 403`. Read-only
+  probe of `info/refs?service=git-receive-pack` with the old token → 403; with the new
+  token → 200. After the fix the trainer and loop-controller pushed `model:` and
+  `revert:` commits in every Phase 10 run.
