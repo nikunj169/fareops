@@ -102,3 +102,24 @@ Format: date · phase · what changed · why · evidence (command output or erro
   t=25s/55s, `curl /health` → 200, POST `/api/2.0/mlflow/experiments/search` →
   `{"experiments":[{"experiment_id":"0","name":"Default",...}]}` with both
   `mlflow.fareops.svc.cluster.local:5000` and `localhost:5000` Host headers.
+
+## 2026-10-11 · Phase 9 · Ingress reached via the Mac's LAN address, not `localhost:8080`
+
+- **What**: Guide 9.4/9.5/9.7 use `localhost:8080` (and `make replay-normal`, whose
+  `replay.py` default URL is `http://localhost:8080`). On this Mac every ingress call
+  uses `http://<LAN-IP>:8080` instead, and replay is started directly as
+  `.venv/bin/python scripts/replay.py --file ~/fareops-data/datasets/replay_normal.parquet
+  --rps 15 --url http://<LAN-IP>:8080` (same file and rate as the Makefile target).
+  No guide file was changed: `--url` is an existing `replay.py` flag.
+- **Why**: A pre-existing local Jenkins (Homebrew `jenkins-lts`, started 10 Aug 2026,
+  `--httpListenAddress=127.0.0.1`) owns `127.0.0.1:8080`. Colima publishes the k3d
+  load balancer on the wildcard `*:8080`; the more specific loopback bind wins, so
+  every loopback request — including `curl -4` — reaches Jenkins, not Traefik. Jenkins
+  is unrelated to this project and was left running.
+- **Evidence**: `lsof -nP -iTCP:8080 -sTCP:LISTEN` →
+  `ssh ... IPv4 TCP *:8080 (LISTEN)` and `java ... TCP 127.0.0.1:8080 (LISTEN)`;
+  `curl -4 -X POST localhost:8080/predict ...` → `HTTP ERROR 403 No valid crumb was
+  included in the request ... Powered by Jetty:// 12.1.8`; the same request to
+  `http://172.16.139.214:8080/predict` → `{"fare_prediction":14.39,"model_version":"1"}`.
+  The guide's own troubleshooting row "`localhost:8080` refused → Port in use →
+  `lsof -i :8080`" covers the same cause.
