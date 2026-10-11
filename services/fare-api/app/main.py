@@ -74,7 +74,8 @@ def ready():
 
 @app.get("/info")
 def info():
-    return {"model_version": MODEL_VERSION, "pod": POD_NAME, "ready": store.ready.is_set()}
+    return {"service": "fare-api", "model_version": MODEL_VERSION, "pod": POD_NAME,
+            "ready": store.ready.is_set()}
 
 
 @app.get("/metrics")
